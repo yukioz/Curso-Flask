@@ -1,4 +1,3 @@
-from sqlalchemy import delete
 from sql_alchemy import banco
 
 class HotelModel(banco.Model):
