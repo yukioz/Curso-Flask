@@ -2,29 +2,8 @@ from flask_restful import Resource, reqparse
 from models.hotel import HotelModel
 from flask_jwt_extended import jwt_required
 import sqlite3
-
-def normalize_path_params(cidade=None, estrelas_min=0, estrelas_max=5, diaria_min = 0, diaria_max = 10000, limit = 50, offset=0, **dados):
-    
-    # limit = maximo de resultado por consulta
-    # offset = quantos devo pular? limit * número da página
-    if cidade:
-        return {
-            "estrelas_min": estrelas_min,
-            "estrelas_max": estrelas_max,
-            "diaria_min" : diaria_min,
-            "diaria_max" : diaria_max,
-            "cidade": cidade,
-            "limit" : limit,
-            "offset": offset,
-        }
-    return {
-            "estrelas_min": estrelas_min,
-            "estrelas_max": estrelas_max,
-            "diaria_min" : diaria_min,
-            "diaria_max" : diaria_max,
-            "limit" : limit,
-            "offset": offset,
-        }
+from models.site import SiteModel
+from resources.filtros import normalize_path_params, consulta_com_cidade, consulta_sem_cidade
 
 # path /hoteis?cidade=Rio de Janeiro&estrelas+min=4&diaria_max400
 path_params = reqparse.RequestParser()
@@ -48,20 +27,11 @@ class Hoteis(Resource):
         parametros = normalize_path_params(**dados_validos)
 
         if not parametros.get('cidade'):
-            consulta = "SELECT * FROM hoteis \
-                WHERE (estrelas >= ? and estrelas < ?) \
-                and (diaria >= ? and diaria < ?) \
-                LIMIT ? OFFSET ?"
             tupla = tuple([parametros[chave] for chave in parametros])   
-            resultado = cursor.execute(consulta, tupla)
+            resultado = cursor.execute(consulta_sem_cidade, tupla)
         else:
-            consulta = "SELECT * FROM hoteis \
-                WHERE (estrelas >= ? and estrelas < ?) \
-                and (diaria >= ? and diaria < ?) \
-                and cidade = ? \
-                LIMIT ? OFFSET ?"
             tupla = tuple([parametros[chave] for chave in parametros])   
-            resultado = cursor.execute(consulta, tupla)
+            resultado = cursor.execute(consulta_com_cidade, tupla)
 
         hoteis = []
         for linha in resultado:
@@ -70,7 +40,8 @@ class Hoteis(Resource):
                 'nome': linha[1],
                 'estrelas': linha[2],
                 'diaria': linha[3],
-                'cidade': linha[4]
+                'cidade': linha[4],
+                'site_id': linha[5]
             })
 
         return {'hoteis': hoteis}
@@ -81,6 +52,7 @@ class Hotel(Resource):
     atributos.add_argument('estrelas', type=float, required=True, help="The field 'estrelas' cannot be left empty.")
     atributos.add_argument('diaria')
     atributos.add_argument('cidade')
+    atributos.add_argument('site_id', type=int, required=True, help="Every hotel needs to be linked with a site.")
 
     def get(self, hotel_id):
         hotel = HotelModel.find_hotel(hotel_id)
@@ -97,6 +69,9 @@ class Hotel(Resource):
 
         dados = Hotel.atributos.parse_args()
         hotel = HotelModel(hotel_id,  **dados)
+
+        if not SiteModel.find_by_id(dados.get('site_id')):
+            return {"messagem": "The hotel must be associated with a valid site_id."}, 400
 
         # try catch
         try:
